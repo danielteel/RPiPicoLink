@@ -87,25 +87,27 @@ async def connect(ssid, password, ipAddress, port):
         
         while wlan.status()==STAT_GOT_IP:
 
-            sock=socket.socket()
-            print(sock)       
+            sock=socket.socket()   
             
             await asyncio.sleep(1)
             try:
                 sock.connect(sockAddress)
                 while wlan.status()==STAT_GOT_IP and str(sock)[:15]=='<socket state=3':
-                    temp = getTemp()
-                    print(gc.mem_free(), temp)
-                    sock.write(str(temp).encode())
-                    await asyncio.sleep_ms(100)
+                    print(sock)
+
+                    recvData=''
+                    while 'incoming=0 ' not in str(sock):
+                        recvData = recvData + sock.recv(256).decode()
+                    if recvData:
+                        print("Recieved:", recvData)
+                    sock.write(str(getTemp()).encode())
+                    await asyncio.sleep_ms(1000)
 
                 raise OSError('connection lost')
 
             except OSError as err:
-                print(err)
                 sock.close()
                 sock=None
-
 
 
 async def main():

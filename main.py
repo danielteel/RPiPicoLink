@@ -1,125 +1,145 @@
-import network
-import socket
 import time
-import micropython
-import gc
 
-from machine import ADC
-from machine import Pin
-from machine import Timer
+def isdigit(c):
+    return c>='0' and c<='9'
+def isalpha(c):
+    return (c>='a' and c<='z') or (c>='A' and c<='Z')
+def isalnum(c):
+    return (c>='a' and c<='z') or (c>='A' and c<='Z') or (c>='0' and c<='9')
+def ishex(c):
+    return isdigit(c) or (c>='a' and c<='f') or (c>='A' and c<='F')
 
-STAT_IDLE = 0
-STAT_CONNECTING = 1
-STAT_GOT_IP = 3
-STAT_CONNECT_FAIL = -1
-STAT_NO_AP_FOUND = -2
-STAT_WRONGPASSWORD = -3
+def tokenize(text):
+    tokens=[]
+    look=text[0]
+    lookIndex=0
 
-class DanNet:
-    instance=None
+    def getChar():
+        nonlocal look, lookIndex
+        lookIndex+=1
+        try:
+            look=text[lookIndex]
+        except:
+            look=''
 
-    active=False
-    timer=None
-    wlan=None
+    def peek():
+        nonlocal lookIndex
+        peekIndex = lookIndex + 1
+        if peekIndex>=len(text):
+            return ''
+        return text[peekIndex]
 
-    ssid=None
-    password=None
+    def skipWhite():
+        nonlocal look
+        while look.isspace():
+            getChar()
 
-    wlanConnectTime=0
-    wlanConnectTimeout=10
-    wlanConnectTimerPeriod=2
 
-    socketAddress=None
-    socket=None
-    isConnected=False
-
-    def __new__(cls):
-        if cls.instance is None:
-            cls.instance=object.__new__(cls)
-        return cls.instance
-    
-    def shutdown(self):
-        this=self.__class__
-        this.active=False
-        this.isConnected=False
-        if this.socket:
-            try:
-                this.socket.close()
-            finally:
-                this.socket=None
-
-        if this.wlan:
-            this.wlan.disconnect()
-            this.wlan.active(False)
-        if this.timer:
-            this.timer.deinit()
-            this.timer=None
-    
-    def startup(self, ssid, password, ipAddress, port):
-        this = self.__class__
-
-        if this.active:
-            self.shutdown()
+    while look:
+        skipWhite()
         
-        this.ssid=ssid
-        this.password=password
-        this.socketAddress=socket.getaddrinfo(ipAddress, port)[0][-1]
-        this.isConnected=False
+        if not look:
+            break
 
-        this.wlan=network.WLAN(network.STA_IF)
-        this.wlan.disconnect()
-        this.wlan.active(True)
-        this.wlan.connect(this.ssid, this.password)
+        if isalpha(look):#identifiers
+            startIndex=lookIndex
+            while isalnum(look):
+                getChar()
+                if not isalnum(look):                    
+                    tokens.append({'t':'n', 'v': text[startIndex:lookIndex]})
 
-        this.active=True
-
-        this.timer = Timer(period=this.wlanConnectTimerPeriod*1000, mode=Timer.PERIODIC, callback=this.instance.tick)
-
-    def tick(self, t):
-        this=self.__class__
-        if not this.active:
-            return
-        
-        if this.wlan.status()!=STAT_GOT_IP:
-            this.wlanConnectTime+=this.wlanConnectTimerPeriod
-            if this.wlanConnectTime>this.wlanConnectTimeout:
-                this.wlan.disconnect()
-                this.wlan.connect(this.ssid, this.password)
-                this.wlanConnectTime=0
-            print('DanNet: trying to establish WiFi connection', this.wlanConnectTime)
-        else:
-            this.wlanConnectTime=0
-            
-            if this.socket is None:
-                try:
-                    this.socket=socket.socket()
-                    this.socket.connect(this.socketAddress)
-                    
-        
-
-    def get(self):
-        this=self.__class__
-        if this.wlan.isconnected():
-            s=socket.socket()
-            ai=socket.getaddrinfo('10.42.0.1', 80)[0][-1]
-            try:
+        elif look=='0' and peek().lower()=='x':#hex int
+            getChar()
+            getChar()
+            startIndex=lookIndex
+            if not ishex(look):
+                raise ValueError('bad hex literal')
+            while ishex(look):
+                getChar()
                 
-                adc = ADC(4) 
-                ADC_voltage = adc.read_u16() * (3.3 / (65536))
-                temperature_celcius = 27 - (ADC_voltage - 0.706)/0.001721
-                temp_fahrenheit=32+(1.8*temperature_celcius)
-                s.connect(ai)
-                s.send(str.encode(str(temp_fahrenheit)))
-            finally:
-                s.close()
+            tokens.append({'t':'i', 'v': int(text[startIndex:lookIndex], 16)})
 
-try:
-    DanNet().startup('Pico', '123456789', '10.42.0.1', 80)
-    DanNet().startup('Pico', '123456789', '10.42.0.1', 80)
+        elif look=='-' or look=='+' or look=='.' or isdigit(look):#ints, floats, or + - .
+            unary=''
+            if look=='-' or look=='+':
+                unary=look
+                getChar()
+                skipWhite()
+            if not look or not (look=='.' or isdigit(look)):
+                tokens.append({'t':'s', 'v': unary})
+            else:
+                startIndex=lookIndex
+                hasDec=False
+                notDone=True
+                while look and notDone:
+                    notDone=False
+                    if isdigit(look):
+                        notDone=True
+                    elif look=='.' and not hasDec:
+                        hasDec=True
+                        notDone=True
+                    if notDone:
+                        getChar()
+                if lookIndex-startIndex==1 and text[startIndex]=='.':
+                    if unary:
+                        tokens.append({'t':'s', 'v': unary})
+                    tokens.append({'t':'s', 'v': '.'})
+                else:
+                    if hasDec:
+                        val=float(text[startIndex:lookIndex])
+                        if unary=='-':
+                            val=-val
+                        tokens.append({'t':'f', 'v': val})
+                    else:
+                        val=int(text[startIndex:lookIndex])
+                        if unary=='-':
+                            val=-val
+                        tokens.append({'t':'i', 'v': val})
+            
+        elif look=='"' or look=="'":#strings
+            toMatch = look
+            getChar()
+            startIndex=lookIndex
+            while look and look!=toMatch:
+                getChar()
+            if look!=toMatch:
+                raise ValueError('bad string literal')
+            else:
+                tokens.append({'t':'$', 'v': text[startIndex:lookIndex]})
+                getChar()
 
-    while True:
-        gc.collect()
-        time.sleep(1)
+        else:#symbols
+            tokens.append({'t':'s', 'v': look})
+            getChar()
+    return tokens
 
-except KeyboardInterrupt:
-    DanNet().shutdown()
+
+def buildDictionary(tokens):
+    dict = {}
+    lastIdent=None
+    for token in tokens:
+        if token['t']=='n':
+            lastIdent=token['v']
+        elif token['t']=='s':
+            if token['v']!='=':
+                lastIdent=None
+        elif lastIdent and (token['t']=='$' or token['t']=='i' or token['t']=='f'):
+            dict[lastIdent]=token['v']
+            lastIdent=None
+        else:
+            lastIdent=None
+    return dict
+
+#types
+#s - symbol
+#n - name
+#i - int
+#f - float
+#$ - string
+
+startTime = time.ticks_ms()
+tokens = tokenize('<socket state=3 timeout=-1 incoming=2000fc0c off=0>')
+dict=buildDictionary(tokens)
+endTime = time.ticks_ms()
+print(dict)
+print(endTime-startTime)
