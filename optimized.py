@@ -1,13 +1,5 @@
 import time
 
-def isdigit(c):
-    return c>=48 and c<=57
-def isalpha(c):
-    return (c>=97 and c<=122) or (c>=65 and c<=90)
-def isalnum(c):
-    return (c>=97 and c<=122) or (c>=65 and c<=90) or (c>=48 and c<=57)
-def ishex(c):
-    return (c>=48 and c<=57) or (c>=97 and c<=102) or (c>=65 and c<=70)
 
 def tokenize(text):
     tokens=[]
@@ -41,31 +33,31 @@ def tokenize(text):
         if not look:
             break
 
-        if isalpha(look):#identifiers
+        if (look>=97 and look<=122) or (look>=65 and look<=90):#identifiers
             startIndex=lookIndex
-            while isalnum(look):
+            while (look>=97 and look<=122) or (look>=65 and look<=90) or (look>=48 and look<=57):
                 getChar()
-                if not isalnum(look):                    
+                if not ((look>=97 and look<=122) or (look>=65 and look<=90) or (look>=48 and look<=57)):                    
                     tokens.append({b't':b'n', b'v': text[startIndex:lookIndex]})
 
         elif look==48 and (peek()==120 or peek()==88):#hex int
             getChar()
             getChar()
             startIndex=lookIndex
-            if not ishex(look):
+            if not ((look>=48 and look<=57) or (look>=97 and look<=102) or (look>=65 and look<=70)):
                 raise ValueError('bad hex literal')
-            while ishex(look):
+            while ((look>=48 and look<=57) or (look>=97 and look<=102) or (look>=65 and look<=70)):
                 getChar()
                 
             tokens.append({b't':b'i', b'v': int(text[startIndex:lookIndex], 16)})
 
-        elif look==b'-' or look==b'+' or look==b'.' or isdigit(look):#ints, floats, or + - .
+        elif look==b'-' or look==b'+' or look==b'.' or (look>=48 and look<=57):#ints, floats, or + - .
             unary=b''
             if look==b'-' or look==b'+':
                 unary=look
                 getChar()
                 skipWhite()
-            if not look or not (look==b'.' or isdigit(look)):
+            if not look or not (look==b'.' or (look>=48 and look<=57)):
                 tokens.append({b't':b's', b'v': unary})
             else:
                 startIndex=lookIndex
@@ -73,7 +65,7 @@ def tokenize(text):
                 notDone=True
                 while look and notDone:
                     notDone=False
-                    if isdigit(look):
+                    if (look>=48 and look<=57):
                         notDone=True
                     elif look==b'.' and not hasDec:
                         hasDec=True
@@ -139,7 +131,7 @@ def buildDictionary(tokens):
 
 startTime = time.ticks_ms()
 tokens = tokenize(b'state=3 timeout=-1 incoming=0x2000fc0c off=0 data="asdflkjasdf asdfkj asd fjakjsadf asjf asldf jasflkjadf askdjf asd0fas0df 98asd0f98 as9fd 8asdf9 8asd0f98 as09f 8asd f8a sa9 df8a0s9f 8as90f8 asdfl jkasdf as09f 8as09f8 asdf9 8as09f 8as0df9 8asd0f 98as09fd 8as09f8 asf 8asdf as asd fasdf 908as09f8as 98fa sdf08asd f09asdf asdjf l3 345j3k4h5 23kj5hjkdfkjgh sfgkj hsfgkjhsfgksdfgsfg8s dfg8sfgs8dfg sdfg7 sdf9gs98fg6 fasdflkjasdf asdfkj asd fjakjsadf asjf asldf jasflkjadf askdjf asd0fas0df 98asd0f98 as9fd 8asdf9 8asd0f98 as09f 8asd f8a sa9 df8a0s9f 8as90f8 asdfl jkasdf as09f 8as09f8 asdf9 8as09f 8as0df9 8asd0f 98as09fd 8as09f8 asf 8asdf as asd fasdf 908as09f8as 98fa sdf08asd f09asdf asdjf l3 345j3k4h5 23kj5hjkdfkjgh sfgkj hsfgkjhsfgksdfgsfg8s dfg8sfgs8dfg sdfg7 sdf9gs98fg6 f"')
-dict=buildDictionary(tokens)
 endTime = time.ticks_ms()
+dict=buildDictionary(tokens)
 print(dict)
 print(endTime-startTime)
