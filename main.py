@@ -2,6 +2,7 @@ import network
 import socket
 import asyncio
 import parse
+import gc
 
 from machine import ADC
 from machine import Pin
@@ -81,6 +82,8 @@ async def connect(ssid, password, ipAddress, port):
             led.toggle()
             if wlanConnectTime>wlanConnectTimeout:
                 wlan.disconnect()
+                wlan.active(False)
+                await asyncio.sleep(1)
                 wlan.connect(ssid, password)
                 wlanConnectTime=0
             print(b'DanNet: trying to establish WiFi connection', wlanConnectTime)
@@ -115,7 +118,7 @@ async def connect(ssid, password, ipAddress, port):
                         else:
                             recvData = recvData + byte
 
-                    sock.write(('<info temp='+str(getTemp())+'>'+'\n').encode())
+                    print(sock.write(('<info temp='+str(getTemp())+' freemem='+str(gc.mem_free())+'>'+'\n').encode()), gc.mem_free())
                     await asyncio.sleep_ms(0)
 
                 raise SockError('connection lost')
