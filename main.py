@@ -5,10 +5,17 @@ import parse
 import gc
 import machine
 import time
+import mlx90614
+from machine import I2C, Pin, UART
+
+#uart = UART(0, baudrate = 4800, rx=Pin(1), timeout=1)
+
+#i2c = I2C(id=0, sda = Pin(4), scl = Pin(5), freq=100000)
+#sensor = mlx90614.MLX90614(i2c)
 
 led=machine.Pin('LED')
 led.value(1)
-time.sleep(2)
+time.sleep_ms(2000)
 led.value(0)
 
 # STAT_IDLE = 0
@@ -25,9 +32,16 @@ STAT_GOT_IP = 3
 # STATE_PEER_CLOSED = 4
 # STATE_ACTIVE_UDP = 5
 
+def recieved(wlan, sock, message):
+    sentence=uart.readline()
+    if not sentence or sentence[:6]!=b'$GPGGA':
+        sentence=b''
+    else:
+        print(sentence)
+    sock.write('temp='+str(sensor.read_object_temp())+' rssi='+str(wlan.status('rssi'))+' '+sentence.decode()+'\n')
 
 
-async def connect(ssid, password, ipAddress, port):
+async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRecieve):
     class SockError(Exception): pass
     wlanConnectTime=0
     wlanConnectTimeout=10
@@ -36,13 +50,10 @@ async def connect(ssid, password, ipAddress, port):
 
     wlan=network.WLAN(network.STA_IF)
     wlan.config(pm = network.WLAN.PM_NONE)
-    wlan.config(txpower=1000)
-    while (wlan.config('pm')!=network.WLAN.PM_NONE):
-        await asyncio.sleep_ms(10)
+    wlan.config(txpower=40)
     wlan.disconnect()
     wlan.active(True)
     wlan.connect(ssid, password)
-    print(wlan.config('txpower'))
 
     sock = None
     try:
@@ -77,36 +88,77 @@ async def connect(ssid, password, ipAddress, port):
             
             await asyncio.sleep_ms(250)
             try:
+
                 try:
                     sock.connect(sockAddress)
                 except OSError as err:
-                    if err.errno!=104:#ECONNRESET
+                    if err.errno!=104 and err.errno!=113 and err.errno!=105 and err.errno!=103:#ECONNRESET or EHOSTUNREACH or ECONNABORTED
                         raise err
-                
-                if wlan.status()==STAT_GOT_IP and str(sock)[:15].encode()==b'<socket state=3':
-                    sock.write('initial rssi='+str(wlan.status('rssi'))+'\n')
+                    else:
+                        raise SockError('failed')
 
-                while wlan.status()==STAT_GOT_IP and str(sock)[:15].encode()==b'<socket state=3':
-                    recvData=b''
-                    while str(sock)[:15].encode()==b'<socket state=3' and ('incoming=0 ' not in str(sock)):
-                        byte=sock.recv(1)
-                        if byte==b'\n':
-                            sock.write('rssi='+str(wlan.status('rssi'))+' recvd='+str(parse.compile(recvData))+'\n')
-                            recvData=b''
-                        else:
-                            recvData = recvData + byte
-                    await asyncio.sleep_ms(0)
+                recvData=b''
+                
+                if wlan.status()==STAT_GOT_IP and str(sock)[:15]=='<socket state=3':
+                    onConnect(sock)
+
+                    while wlan.status()==STAT_GOT_IP and str(sock)[:15].encode()==b'<socket state=3':
+
+                        while str(sock)[:15]=='<socket state=3' and ('incoming=0 ' not in str(sock)):
+                            recvData+=sock.recv(64)
+
+                        while recvData:
+                            newLinePos = recvData.find(b'\n')
+                            if newLinePos!=-1:
+                                onRecieve(sock, recvData[:newLinePos+1])
+                                recvData=recvData[newLinePos+1:]
+                            else:
+                                break
+
+                        await asyncio.sleep_ms(5)
 
                 raise SockError('connection lost')
 
             except SockError as err:
+                if err.value!='failed':
+                    onDisconnect()
+                print("Error on socket:", err)
                 sock.close()
                 sock=None
+                
+            except KeyboardInterrupt as err:
+                onDisconnect()
+                sock.close()
+                sock=None
+                raise err
+            except:
+                onDisconnect()
+                print("Uncaught exception")
+                sock.close()
+                sock=None
+                raise
+
+
+theSocket=None
+def onConnect(sock):
+    global theSocket
+    theSocket=sock
+    sock.write('hi\n')
+    print('onConnect', sock)
+
+def onDisconnect():
+    global theSocket
+    theSocket=None
+    print('onDisconnect')
+
+def onRecieve(sock, message):
+    print('onRecieve', sock, message)
+    sock.write('thanks\n')
 
 
 async def main():
     while 1:
-        await connect('Pico', '123456789', '10.42.0.1', 80)
+        await connect('Pico', '123456789', '10.42.0.1', 80, onConnect, onDisconnect, onRecieve)
 
 
 try:
