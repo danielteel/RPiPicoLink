@@ -10,8 +10,8 @@ from machine import I2C, Pin, UART
 
 #uart = UART(0, baudrate = 4800, rx=Pin(1), timeout=1)
 
-#i2c = I2C(id=0, sda = Pin(4), scl = Pin(5), freq=100000)
-#sensor = mlx90614.MLX90614(i2c)
+i2c = I2C(id=0, sda = Pin(4), scl = Pin(5), freq=100000)
+sensor = mlx90614.MLX90614(i2c)
 
 led=machine.Pin('LED')
 led.value(1)
@@ -41,6 +41,11 @@ def recieved(wlan, sock, message):
     sock.write('temp='+str(sensor.read_object_temp())+' rssi='+str(wlan.status('rssi'))+' '+sentence.decode()+'\n')
 
 
+def writeSocket(sock, data):
+    bytesWritten = sock.write(data)
+    if bytesWritten!=len(data):
+        print('shits fucked')
+
 async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRecieve):
     class SockError(Exception): pass
     wlanConnectTime=0
@@ -50,7 +55,6 @@ async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRe
 
     wlan=network.WLAN(network.STA_IF)
     wlan.config(pm = network.WLAN.PM_NONE)
-    wlan.config(txpower=40)
     wlan.disconnect()
     wlan.active(True)
     wlan.connect(ssid, password)
@@ -63,6 +67,7 @@ async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRe
 
 
     while 1:
+        await asyncio.sleep_ms(100)
         while wlan.status()!=STAT_GOT_IP:
             if wlanConnectTime>wlanConnectTimeout:
                 wlan.disconnect()
@@ -82,11 +87,11 @@ async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRe
         wlanTimeouts=0
         
         while wlan.status()==STAT_GOT_IP:
+            await asyncio.sleep_ms(100)
 
             sock=socket.socket()   
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
-            await asyncio.sleep_ms(250)
             try:
 
                 try:
@@ -102,12 +107,14 @@ async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRe
                 if wlan.status()==STAT_GOT_IP and str(sock)[:15]=='<socket state=3':
                     onConnect(sock)
 
-                    while wlan.status()==STAT_GOT_IP and str(sock)[:15].encode()==b'<socket state=3':
+                    while wlan.status()==STAT_GOT_IP and str(sock)[:15]=='<socket state=3':
 
                         while str(sock)[:15]=='<socket state=3' and ('incoming=0 ' not in str(sock)):
-                            recvData+=sock.recv(64)
+                            recvData+=sock.recv(128)
+                            await asyncio.sleep_ms(0)
 
                         while recvData:
+                            await asyncio.sleep_ms(0)
                             newLinePos = recvData.find(b'\n')
                             if newLinePos!=-1:
                                 onRecieve(sock, recvData[:newLinePos+1])
@@ -115,7 +122,7 @@ async def connect(ssid, password, ipAddress, port, onConnect, onDisconnect, onRe
                             else:
                                 break
 
-                        await asyncio.sleep_ms(5)
+                        await asyncio.sleep_ms(10)
 
                 raise SockError('connection lost')
 
@@ -143,7 +150,6 @@ theSocket=None
 def onConnect(sock):
     global theSocket
     theSocket=sock
-    sock.write('hi\n')
     print('onConnect', sock)
 
 def onDisconnect():
@@ -152,14 +158,21 @@ def onDisconnect():
     print('onDisconnect')
 
 def onRecieve(sock, message):
-    print('onRecieve', sock, message)
-    sock.write('thanks\n')
+    print(message)
 
-
-async def main():
+async def connectionTask():
     while 1:
         await connect('Pico', '123456789', '10.42.0.1', 80, onConnect, onDisconnect, onRecieve)
 
+async def sensorTask():
+    while 1:
+        print("Sensor Task")
+        if theSocket:
+            writeSocket(theSocket, 'temp='+str(sensor.read_object_temp()))
+        await asyncio.sleep_ms(1000)
+
+async def main():
+    await asyncio.gather(connectionTask(), sensorTask())
 
 try:
     asyncio.run(main())
