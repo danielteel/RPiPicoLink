@@ -3,21 +3,29 @@ import re
 class ParseError(Exception):
     pass
 
+#parsing inspired by jack crenshaws lets build a compiler
+
 def tokenize(string):
+    #i was using regular strings, but the b'' strings are like twice as performant
     if type(string) is str:
         string=string.encode()
+
     index=0
+
+    #I had regexs for strings and white space manually parsing them is about as fast and less likely to break from lonnggg strings or whitespace
     number=re.compile(rb"([-+]?((\d+\.?\d*)|(\d*\.?\d+)))")
     ident=re.compile(rb"([a-zA-Z]+\d*[a-zA-Z0-9_]*)")
     symbol=re.compile(rb'([=\[\],;<>])')
+
     tokens=[]
     stringLen = len(string)
+    
     while index<stringLen:
 
-        if string[index]<=32:
+        if string[index]<=32 and string[index]!=0:
             start=index+1
             index+=1
-            while index<stringLen and string[index]<=32:
+            while index<stringLen and string[index]<=32 and string[index]!=0:
                 index+=1
             tokens.append((b'white',))
             if index>=stringLen:
@@ -132,7 +140,7 @@ def parse(inTokens):
     matchSymbol(b'>')
     matchEnd()
 
-    return objName,props
+    return objName, props
 
 def compile(text):
     try:

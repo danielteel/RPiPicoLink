@@ -1,5 +1,9 @@
 import ustruct
 
+# i2c = I2C(id=0, sda = Pin(4), scl = Pin(5), freq=100000)
+# sensor = mlx90614.MLX90614(i2c)
+# sensor.read_object_temp()
+
 class SensorBase:
 
 	def read16(self, register):
@@ -7,12 +11,15 @@ class SensorBase:
 		return ustruct.unpack('<H', data)[0]
 
 	def read_temp(self, register):
-		temp = self.read16(register);
-		# apply measurement resolution (0.02 degrees per LSB)
-		temp *= .02;
-		# Kelvin to Celcius
-		temp -= 273.15;
-		return temp;
+		try:
+			temp = self.read16(register)
+			# apply measurement resolution (0.02 degrees per LSB)
+			temp *= .02
+			# Kelvin to Celcius
+			temp -= 273.15
+			return temp
+		except:
+			return None
 
 	def read_ambient_temp(self):
 		return self.read_temp(self._REGISTER_TA)
